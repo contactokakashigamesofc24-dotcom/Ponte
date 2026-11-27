@@ -106,6 +106,8 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
     var activeRoom by remember { mutableStateOf<PonteRoom?>(null) }
     var showProvider by remember { mutableStateOf(false) }
     var showLogin by remember { mutableStateOf(false) }
+    var loginUsername by remember { mutableStateOf("") }
+    var loginPassword by remember { mutableStateOf("") }
     var accountProvider by remember { mutableStateOf("matrix.org") }
     val rooms = remember { mutableStateListOf<PonteRoom>() }
     val messages = remember { mutableStateListOf<PonteMessage>() }
@@ -219,8 +221,11 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
         )
         else -> if (showLogin) LoginScreen(
             server = accountProvider,
+            user = loginUsername,
+            password = loginPassword,
+            onUserChange = { loginUsername = it; error = null },
+            onPasswordChange = { loginPassword = it; error = null },
             error = error,
-            onClearError = { error = null },
             onLogin = { server, user, password ->
                 scope.launch {
                     pageLoading = true
@@ -229,6 +234,7 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
                         userId = repository.login(server, user, password)
                     } catch (t: Throwable) {
                         error = userFacingError(t)
+                        loginPassword = ""
                     } finally {
                         pageLoading = false
                     }
@@ -287,7 +293,7 @@ private fun WelcomeScreen(onManualLogin: () -> Unit, onCreateAccount: () -> Unit
             Text("Criar conta Matrix", color = Color.White, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(20.dp))
-        Text("Ponte • versão 0.2.6", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
+        Text("Ponte • versão 0.2.7", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(10.dp))
     }
 }
@@ -350,14 +356,15 @@ private fun ProviderScreen(
 @Composable
 private fun LoginScreen(
     server: String,
+    user: String,
+    password: String,
+    onUserChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
     error: String?,
-    onClearError: () -> Unit,
     onLogin: (String, String, String) -> Unit,
     onRegister: () -> Unit,
     onBack: () -> Unit
 ) {
-    var user by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -377,7 +384,7 @@ private fun LoginScreen(
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = user,
-            onValueChange = { user = it; onClearError() },
+            onValueChange = onUserChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Usuário Matrix") },
             placeholder = { Text("@nome:matrix.org ou nome") },
@@ -386,7 +393,7 @@ private fun LoginScreen(
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it; onClearError() },
+            onValueChange = onPasswordChange,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Senha da conta Matrix") },
             singleLine = true,
@@ -580,12 +587,26 @@ private fun ChatScreen(
 }
 
 private fun userFacingError(error: Throwable): String {
-    val message = error.message.orEmpty()
+    val parts = generateSequence(error) { it.cause }
+        .take(4)
+        .map { cause ->
+            val raw = cause.message.orEmpty()
+                .replace(Regex("(?i)(password|access[_-]?token|refresh[_-]?token)\\s*[:=]\\s*[^,;\\s}]+"), "$1=[oculto]")
+                .replace(Regex("(?i)bearer\\s+[a-z0-9._~+/-]+=*"), "Bearer [oculto]")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            if (raw.isBlank()) cause.javaClass.simpleName else "${cause.javaClass.simpleName}: $raw"
+        }
+        .distinct()
+        .joinToString(" → ")
+        .take(420)
+        .ifBlank { "Erro sem detalhes retornados pelo SDK." }
+
     return when {
-        message.contains("password", ignoreCase = true) || message.contains("unauthorized", ignoreCase = true) || message.contains("401") -> "Não foi possível entrar. Confira a conta Matrix, a senha e o servidor."
-        message.contains("timeout", ignoreCase = true) || message.contains("connect", ignoreCase = true) -> "Não consegui conectar ao servidor. Confira a internet e tente novamente."
-        message.contains("HTTPS", ignoreCase = true) -> message
-        message.isNotBlank() -> "Falha no Matrix: $message"
-        else -> "Ocorreu um erro ao acessar a conta Matrix. Tente novamente."
+        parts.contains("M_FORBIDDEN", ignoreCase = true) || parts.contains("M_UNAUTHORIZED", ignoreCase = true) || parts.contains("401") ->
+            "O servidor Matrix recusou a autenticação (detalhe: $parts). Isso não permite distinguir senha incorreta de método de login incompatível."
+        parts.contains("M_LIMIT_EXCEEDED", ignoreCase = true) || parts.contains("429") ->
+            "O Matrix limitou tentativas. Aguarde um pouco antes de tentar de novo. Detalhe: $parts"
+        else -> "Falha ao entrar no Matrix: $parts"
     }
 }
