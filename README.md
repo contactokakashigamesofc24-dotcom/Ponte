@@ -2,19 +2,25 @@
 
 Mensageiro Android independente em desenvolvimento, usando a rede aberta Matrix e o SDK oficial Matrix Rust Kotlin. Não é Signal, Element, nem produto afiliado a esses projetos.
 
-## Estado atual
+## Versão 0.2.0 — integração inicial em teste
 
-Versão 0.2.0 em desenvolvimento:
-- login Matrix com servidor configurável (matrix.org por padrão);
-- armazenamento de sessão criptografado com chave mantida pelo Android Keystore;
-- banco local do SDK usando chave aleatória;
-- sincronização inicial e listagem de salas ingressadas;
-- visualização de mensagens de texto e envio em salas existentes.
+- Login com uma conta Matrix existente, com servidor configurável (matrix.org por padrão).
+- Guarda a sessão cifrada usando uma chave do Android Keystore e mantém o banco local protegido por chave aleatória.
+- Inicia sincronização e mostra salas em que a conta entrou.
+- Permite criar a sala privada criptografada “Anotações” para testar no mesmo aparelho.
+- Permite iniciar uma conversa privada com convite a outro identificador Matrix.
+- Abre salas e envia/recebe mensagens de texto.
 
-O projeto ainda é protótipo e precisa de testes reais de login, sincronização, cifragem ponta a ponta e envio/recebimento em duas contas antes de ser considerado funcional e pronto para uso cotidiano. Não use como cliente de emergência nem para informações sensíveis até a revisão e validação.
+**Ainda é um protótipo.** A compilação passou, mas login real, sincronização, criptografia ponta a ponta e mensagens precisam ser testados no aparelho antes de considerar o app pronto. Não use para conversas sensíveis ou como mensageiro de emergência.
 
-Para criar uma conta, o botão abre o cadastro do Matrix.org no navegador. A senha é digitada no próprio aparelho e não deve ser enviada por chat. Token e chave local são protegidos com Android Keystore; o código-fonte é público.
+### Teste com um aparelho
 
-## Compilação
+1. Entre com uma conta Matrix. Se não tiver, use “Criar uma conta Matrix”, que abre o cadastro do provedor no navegador.
+2. Toque em “Criar Anotações” para criar uma sala privada e enviar uma mensagem para você mesmo.
+3. Para conversar com outra pessoa, toque em “Nova conversa” e digite o ID Matrix dela, por exemplo `@nome:matrix.org`. Ela precisa ter uma conta Matrix; não precisa instalar Ponte.
 
-GitHub Actions compila APK de depuração e publica-o como pré-lançamento. Veja Actions/Releases no repositório.
+Use sua senha Matrix somente no app Ponte, não a senha do Gmail. Tokens de sessão ficam protegidos pelo Android Keystore. O código-fonte deste repositório é público.
+
+## Build
+
+O GitHub Actions compila um APK de depuração e publica pré-lançamentos. Todos os builds ainda exigem validação no aparelho.

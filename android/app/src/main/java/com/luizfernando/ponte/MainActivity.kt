@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -170,6 +171,24 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
             rooms = rooms,
             error = error,
             onOpenRoom = { activeRoom = it },
+            onCreateTestRoom = {
+                scope.launch {
+                    error = null
+                    try {
+                        val roomId = repository.createPrivateTestRoom()
+                        activeRoom = PonteRoom(roomId, "Anotações")
+                    } catch (t: Throwable) { error = userFacingError(t) }
+                }
+            },
+            onStartDirectChat = { matrixId ->
+                scope.launch {
+                    error = null
+                    try {
+                        val roomId = repository.startDirectChat(matrixId)
+                        activeRoom = PonteRoom(roomId, matrixId)
+                    } catch (t: Throwable) { error = userFacingError(t) }
+                }
+            },
             onLogout = {
                 scope.launch {
                     pageLoading = true
@@ -287,8 +306,12 @@ private fun RoomsScreen(
     rooms: List<PonteRoom>,
     error: String?,
     onOpenRoom: (PonteRoom) -> Unit,
+    onCreateTestRoom: () -> Unit,
+    onStartDirectChat: (String) -> Unit,
     onLogout: () -> Unit
 ) {
+    var showNewChat by remember { mutableStateOf(false) }
+    var matrixId by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 18.dp, vertical = 14.dp),
@@ -301,14 +324,23 @@ private fun RoomsScreen(
             }
             IconButton(onClick = onLogout) { Icon(Icons.Filled.Logout, contentDescription = "Sair", tint = Muted) }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 14.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            TextButton(onClick = onCreateTestRoom, modifier = Modifier.weight(1f)) { Text("Criar Anotações") }
+            TextButton(onClick = { showNewChat = true }, modifier = Modifier.weight(1f)) { Text("Nova conversa") }
+        }
         if (!error.isNullOrBlank()) Text(error, Modifier.padding(16.dp), color = Color(0xFFB3261E), style = MaterialTheme.typography.bodySmall)
         if (rooms.isEmpty()) {
             Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = Blue)
+                Box(Modifier.size(56.dp).background(Color(0xFFE9EEFF), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.ChatBubbleOutline, null, tint = Blue, modifier = Modifier.size(28.dp))
+                }
                 Spacer(Modifier.height(16.dp))
-                Text("Sincronizando suas conversas…", color = Ink, fontWeight = FontWeight.SemiBold)
+                Text("Ainda não há salas nesta conta.", color = Ink, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
-                Text("Quando o servidor terminar a sincronização, suas salas Matrix aparecerão aqui.", color = Muted, textAlign = TextAlign.Center)
+                Text("Toque em “Criar Anotações” para testar uma conversa consigo mesmo, ou “Nova conversa” para convidar outra conta Matrix.", color = Muted, textAlign = TextAlign.Center)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -333,6 +365,36 @@ private fun RoomsScreen(
                 }
             }
         }
+    }
+    if (showNewChat) {
+        AlertDialog(
+            onDismissRequest = { showNewChat = false },
+            title = { Text("Nova conversa Matrix") },
+            text = {
+                Column {
+                    Text("Digite o ID Matrix completo da outra pessoa, por exemplo @nome:matrix.org. Ela precisa ter uma conta Matrix.", color = Muted)
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = matrixId,
+                        onValueChange = { matrixId = it },
+                        label = { Text("ID Matrix") },
+                        placeholder = { Text("@nome:matrix.org") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = matrixId.trim().startsWith("@") && matrixId.contains(":"),
+                    onClick = {
+                        val id = matrixId.trim()
+                        showNewChat = false
+                        onStartDirectChat(id)
+                    }
+                ) { Text("Convidar") }
+            },
+            dismissButton = { TextButton(onClick = { showNewChat = false }) { Text("Cancelar") } }
+        )
     }
 }
 

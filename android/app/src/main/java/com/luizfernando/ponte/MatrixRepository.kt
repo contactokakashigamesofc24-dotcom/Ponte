@@ -9,7 +9,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.matrix.rustcomponents.sdk.Client
 import org.matrix.rustcomponents.sdk.ClientBuilder
+import org.matrix.rustcomponents.sdk.CreateRoomParameters
 import org.matrix.rustcomponents.sdk.Membership
+import org.matrix.rustcomponents.sdk.RoomPreset
+import org.matrix.rustcomponents.sdk.RoomVisibility
 import org.matrix.rustcomponents.sdk.MessageType
 import org.matrix.rustcomponents.sdk.Room
 import org.matrix.rustcomponents.sdk.RoomMessageEventContentWithoutRelation
@@ -125,6 +128,38 @@ internal class MatrixRepository(context: Context) {
             active.destroy()
             throw t
         }
+    }
+
+    suspend fun createPrivateTestRoom(): String = withContext(Dispatchers.IO) {
+        val active = client ?: error("Entre na conta Matrix antes de criar uma sala.")
+        val roomId = active.createRoom(
+            CreateRoomParameters(
+                name = "Anotações",
+                isEncrypted = true,
+                visibility = RoomVisibility.Private,
+                preset = RoomPreset.PRIVATE_CHAT
+            )
+        )
+        active.awaitRoomRemoteEcho(roomId).use { }
+        roomId
+    }
+
+    suspend fun startDirectChat(matrixUserId: String): String = withContext(Dispatchers.IO) {
+        val invitee = matrixUserId.trim()
+        require(invitee.startsWith("@") && invitee.contains(":")) { "Digite o ID completo, por exemplo @nome:matrix.org." }
+        val active = client ?: error("Entre na conta Matrix antes de iniciar uma conversa.")
+        val roomId = active.createRoom(
+            CreateRoomParameters(
+                name = invitee,
+                isEncrypted = true,
+                isDirect = true,
+                visibility = RoomVisibility.Private,
+                preset = RoomPreset.PRIVATE_CHAT,
+                invite = listOf(invitee)
+            )
+        )
+        active.awaitRoomRemoteEcho(roomId).use { }
+        roomId
     }
 
     suspend fun rooms(): List<PonteRoom> = withContext(Dispatchers.IO) {
