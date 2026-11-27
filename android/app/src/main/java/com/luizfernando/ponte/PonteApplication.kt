@@ -5,6 +5,7 @@ import android.util.Log
 import org.matrix.rustcomponents.sdk.LogLevel
 import org.matrix.rustcomponents.sdk.TracingConfiguration
 import org.matrix.rustcomponents.sdk.initPlatform
+import org.matrix.rustsdk.Android
 
 /** Initialize Matrix's Android JNI context and TLS certificate verifier before any network call. */
 class PonteApplication : Application() {
