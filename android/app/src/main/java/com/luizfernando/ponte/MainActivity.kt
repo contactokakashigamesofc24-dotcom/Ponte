@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.mutableStateOf
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
@@ -71,13 +72,19 @@ private val Muted = Color(0xFF697586)
 private val MainHandler = Handler(Looper.getMainLooper())
 
 class MainActivity : ComponentActivity() {
+    private val ssoCallback = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        consumeSsoIntent(intent)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = Pale) {
                     PonteApp(
                         repository = remember { MatrixRepository(applicationContext) },
+                        ssoCallbackUri = ssoCallback.value,
+                        onSsoCallbackConsumed = { ssoCallback.value = null },
+                        onOpenUrl = { url -> CustomTabsIntent.Builder().build().launchUrl(this, Uri.parse(url)) },
                         onOpenRegistration = {
                             val registration = Uri.parse("https://account.matrix.org/register?kind=manage_account")
                             try {
@@ -95,10 +102,29 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeSsoIntent(intent)
+    }
+
+    private fun consumeSsoIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme.equals("ponte", ignoreCase = true) && uri.host.equals("login", ignoreCase = true)) {
+            ssoCallback.value = uri.toString()
+        }
+    }
 }
 
 @Composable
-private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Unit) {
+private fun PonteApp(
+    repository: MatrixRepository,
+    ssoCallbackUri: String?,
+    onSsoCallbackConsumed: () -> Unit,
+    onOpenUrl: (String) -> Unit,
+    onOpenRegistration: () -> Unit
+) {
     val scope = rememberCoroutineScope()
     var userId by remember { mutableStateOf<String?>(null) }
     var pageLoading by remember { mutableStateOf(true) }
@@ -106,8 +132,6 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
     var activeRoom by remember { mutableStateOf<PonteRoom?>(null) }
     var showProvider by remember { mutableStateOf(false) }
     var showLogin by remember { mutableStateOf(false) }
-    var loginUsername by remember { mutableStateOf("") }
-    var loginPassword by remember { mutableStateOf("") }
     var accountProvider by remember { mutableStateOf("matrix.org") }
     val rooms = remember { mutableStateListOf<PonteRoom>() }
     val messages = remember { mutableStateListOf<PonteMessage>() }
@@ -127,6 +151,24 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
             error = userFacingError(t)
         } finally {
             pageLoading = false
+        }
+    }
+
+    LaunchedEffect(ssoCallbackUri) {
+        val callback = ssoCallbackUri ?: return@LaunchedEffect
+        pageLoading = true
+        error = null
+        try {
+            userId = repository.finishSsoLogin(callback)
+            showLogin = false
+            showProvider = false
+        } catch (t: Throwable) {
+            error = userFacingError(t)
+            showLogin = true
+            showProvider = false
+        } finally {
+            pageLoading = false
+            onSsoCallbackConsumed()
         }
     }
 
@@ -221,11 +263,8 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
         )
         else -> if (showLogin) LoginScreen(
             server = accountProvider,
-            user = loginUsername,
-            password = loginPassword,
-            onUserChange = { loginUsername = it; error = null },
-            onPasswordChange = { loginPassword = it; error = null },
             error = error,
+            onClearError = { error = null },
             onLogin = { server, user, password ->
                 scope.launch {
                     pageLoading = true
@@ -234,7 +273,20 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
                         userId = repository.login(server, user, password)
                     } catch (t: Throwable) {
                         error = userFacingError(t)
-                        loginPassword = ""
+                    } finally {
+                        pageLoading = false
+                    }
+                }
+            },
+            onSsoLogin = {
+                scope.launch {
+                    pageLoading = true
+                    error = null
+                    try {
+                        val url = repository.beginSsoLogin(accountProvider)
+                        onOpenUrl(url)
+                    } catch (t: Throwable) {
+                        error = userFacingError(t)
                     } finally {
                         pageLoading = false
                     }
@@ -293,7 +345,7 @@ private fun WelcomeScreen(onManualLogin: () -> Unit, onCreateAccount: () -> Unit
             Text("Criar conta Matrix", color = Color.White, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(20.dp))
-        Text("Ponte • versão 0.2.7", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
+        Text("Ponte • versão 0.2.6", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(10.dp))
     }
 }
@@ -356,15 +408,15 @@ private fun ProviderScreen(
 @Composable
 private fun LoginScreen(
     server: String,
-    user: String,
-    password: String,
-    onUserChange: (String) -> Unit,
-    onPasswordChange: (String) -> Unit,
     error: String?,
+    onClearError: () -> Unit,
     onLogin: (String, String, String) -> Unit,
+    onSsoLogin: () -> Unit,
     onRegister: () -> Unit,
     onBack: () -> Unit
 ) {
+    var user by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     Column(
         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -384,7 +436,7 @@ private fun LoginScreen(
         Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = user,
-            onValueChange = onUserChange,
+            onValueChange = { user = it; onClearError() },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Usuário Matrix") },
             placeholder = { Text("@nome:matrix.org ou nome") },
@@ -393,7 +445,7 @@ private fun LoginScreen(
         Spacer(Modifier.height(10.dp))
         OutlinedTextField(
             value = password,
-            onValueChange = onPasswordChange,
+            onValueChange = { password = it; onClearError() },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Senha da conta Matrix") },
             singleLine = true,
@@ -412,6 +464,9 @@ private fun LoginScreen(
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Blue)
         ) { Text("Entrar", fontWeight = FontWeight.SemiBold) }
+        TextButton(onClick = onSsoLogin, modifier = Modifier.fillMaxWidth()) {
+            Text("Entrar pelo navegador (SSO)", color = Blue)
+        }
         TextButton(onClick = onRegister) { Text("Criar uma conta Matrix", color = Blue) }
         Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(14.dp)) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.Top) {
@@ -587,26 +642,12 @@ private fun ChatScreen(
 }
 
 private fun userFacingError(error: Throwable): String {
-    val parts = generateSequence(error) { it.cause }
-        .take(4)
-        .map { cause ->
-            val raw = cause.message.orEmpty()
-                .replace(Regex("(?i)(password|access[_-]?token|refresh[_-]?token)\\s*[:=]\\s*[^,;\\s}]+"), "$1=[oculto]")
-                .replace(Regex("(?i)bearer\\s+[a-z0-9._~+/-]+=*"), "Bearer [oculto]")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-            if (raw.isBlank()) cause.javaClass.simpleName else "${cause.javaClass.simpleName}: $raw"
-        }
-        .distinct()
-        .joinToString(" → ")
-        .take(420)
-        .ifBlank { "Erro sem detalhes retornados pelo SDK." }
-
+    val message = error.message.orEmpty()
     return when {
-        parts.contains("M_FORBIDDEN", ignoreCase = true) || parts.contains("M_UNAUTHORIZED", ignoreCase = true) || parts.contains("401") ->
-            "O servidor Matrix recusou a autenticação (detalhe: $parts). Isso não permite distinguir senha incorreta de método de login incompatível."
-        parts.contains("M_LIMIT_EXCEEDED", ignoreCase = true) || parts.contains("429") ->
-            "O Matrix limitou tentativas. Aguarde um pouco antes de tentar de novo. Detalhe: $parts"
-        else -> "Falha ao entrar no Matrix: $parts"
+        message.contains("password", ignoreCase = true) || message.contains("unauthorized", ignoreCase = true) || message.contains("401") -> "Não foi possível entrar. Confira a conta Matrix, a senha e o servidor."
+        message.contains("timeout", ignoreCase = true) || message.contains("connect", ignoreCase = true) -> "Não consegui conectar ao servidor. Confira a internet e tente novamente."
+        message.contains("HTTPS", ignoreCase = true) -> message
+        message.isNotBlank() -> "Falha no Matrix: $message"
+        else -> "Ocorreu um erro ao acessar a conta Matrix. Tente novamente."
     }
 }

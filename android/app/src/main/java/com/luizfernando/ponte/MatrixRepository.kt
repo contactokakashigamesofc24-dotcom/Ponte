@@ -17,6 +17,7 @@ import org.matrix.rustcomponents.sdk.MessageType
 import org.matrix.rustcomponents.sdk.Room
 import org.matrix.rustcomponents.sdk.RoomMessageEventContentWithoutRelation
 import org.matrix.rustcomponents.sdk.Session
+import org.matrix.rustcomponents.sdk.SsoHandler
 import org.matrix.rustcomponents.sdk.SlidingSyncVersion
 import org.matrix.rustcomponents.sdk.SqliteStoreBuilder
 import org.matrix.rustcomponents.sdk.TextMessageContent
@@ -86,10 +87,60 @@ internal class MatrixRepository(context: Context) {
     private val app = context.applicationContext
     private val vault = SecureSessionVault(app)
     private var client: Client? = null
+    private var pendingSsoClient: Client? = null
+    private var pendingSsoHandler: SsoHandler? = null
+    private var pendingSsoDbKey: ByteArray? = null
     private val dataDirectory = app.filesDir.resolve("matrix-store").apply { mkdirs() }
     private val cacheDirectory = app.cacheDir.resolve("matrix-cache").apply { mkdirs() }
 
+    suspend fun beginSsoLogin(homeserver: String): String = withContext(Dispatchers.IO) {
+        closeClient()
+        closePendingSso()
+        val normalizedServer = normalizeHomeserver(homeserver)
+        val dbKey = ByteArray(32).also(SecureRandom()::nextBytes)
+        val built = newBuilder(normalizedServer, dbKey).build()
+        try {
+            val handler = built.startSsoLogin("ponte://login", null)
+            pendingSsoClient = built
+            pendingSsoHandler = handler
+            pendingSsoDbKey = dbKey
+            handler.url()
+        } catch (t: Throwable) {
+            built.destroy()
+            throw t
+        }
+    }
+
+    suspend fun finishSsoLogin(callbackUrl: String): String = withContext(Dispatchers.IO) {
+        require(callbackUrl.startsWith("ponte://login", ignoreCase = true)) {
+            "O retorno do navegador não corresponde ao login do Ponte."
+        }
+        val active = pendingSsoClient ?: error("A etapa de login expirou. Inicie o acesso pelo navegador novamente.")
+        val handler = pendingSsoHandler ?: error("O login pelo navegador não está mais ativo. Tente novamente.")
+        val dbKey = pendingSsoDbKey ?: error("A chave temporária do login não está disponível. Tente novamente.")
+        try {
+            handler.finish(callbackUrl)
+            val session = active.session() ?: error("O servidor não devolveu uma sessão Matrix após a autenticação.")
+            vault.write(sessionJson(session).put("db_key", Base64.encodeToString(dbKey, Base64.NO_WRAP)))
+            handler.close()
+            pendingSsoHandler = null
+            pendingSsoClient = null
+            pendingSsoDbKey = null
+            startSync(active)
+            client = active
+            session.userId
+        } catch (t: Throwable) {
+            runCatching { handler.close() }
+            runCatching { active.destroy() }
+            pendingSsoHandler = null
+            pendingSsoClient = null
+            pendingSsoDbKey = null
+            throw t
+        }
+    }
+
     suspend fun login(homeserver: String, user: String, password: String): String = withContext(Dispatchers.IO) {
+        closePendingSso()
         closeClient()
         val normalizedServer = normalizeHomeserver(homeserver)
         val dbKey = ByteArray(32).also(SecureRandom()::nextBytes)
@@ -224,6 +275,7 @@ internal class MatrixRepository(context: Context) {
     }
 
     suspend fun logout() = withContext(Dispatchers.IO) {
+        closePendingSso()
         client?.let { active ->
             try { active.logout() } catch (_: Exception) { }
         }
@@ -236,8 +288,17 @@ internal class MatrixRepository(context: Context) {
     }
 
     fun close() {
+        closePendingSso()
         client?.destroy()
         client = null
+    }
+
+    private fun closePendingSso() {
+        runCatching { pendingSsoHandler?.close() }
+        pendingSsoHandler = null
+        runCatching { pendingSsoClient?.destroy() }
+        pendingSsoClient = null
+        pendingSsoDbKey = null
     }
 
     private fun closeClient() {

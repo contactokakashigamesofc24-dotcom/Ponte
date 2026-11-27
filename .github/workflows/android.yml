@@ -56,16 +56,16 @@ jobs:
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ponte-0.2.7-assinado
+          name: Ponte-0.2.8-assinado
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
       - name: Publicar APK assinado
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create ponte-0.2.7-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
+          gh release create ponte-0.2.8-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
           --repo "$GITHUB_REPOSITORY"
           --target "$GITHUB_SHA"
-          --title "Ponte 0.2.7 — diagnóstico de login Matrix"
-          --notes 'Mantém o componente Android rustls-platform-verifier e a validação TLS. Melhora a tela de erro de login para mostrar a causa/código devolvido pelo servidor, ocultando termos de segredo, mantém o ID de usuário preenchido e limpa o campo de senha quando a autenticação falha. Assinado com chave permanente; login Matrix ainda precisa de teste no aparelho.'
+          --title "Ponte 0.2.8 — login SSO pelo navegador"
+          --notes 'Adiciona fluxo inicial de login SSO Matrix pelo navegador e retorno seguro ao Ponte, mantendo login por senha e validação TLS. Assinado com a chave permanente. Login SSO e sincronização ainda precisam de teste real no aparelho.'
           --prerelease
