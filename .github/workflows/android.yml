@@ -46,4 +46,10 @@ jobs:
       - name: Publicar APK de teste
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create ponte-0.2.0-2026-11-27 app/build/outputs/apk/debug/app-debug.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Ponte 0.2.0 — teste Matrix" --notes "Integração inicial com Matrix: login, lista de salas, salas privadas criptografadas e mensagens de texto. Protótipo em teste; confira o README e não use para informações sensíveis até validação no aparelho." --prerelease
+        run: >-
+          gh release create ponte-0.2.0-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
+          --repo "$GITHUB_REPOSITORY"
+          --target "$GITHUB_SHA"
+          --title "Ponte 0.2.0 — teste Matrix"
+          --notes 'Integração inicial com Matrix: login, lista de salas, salas privadas criptografadas e mensagens de texto. Protótipo em teste; confira o README e não use para informações sensíveis até validação no aparelho.'
+          --prerelease
