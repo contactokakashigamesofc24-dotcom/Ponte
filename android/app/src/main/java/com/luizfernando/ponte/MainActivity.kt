@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -93,6 +94,7 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
     var pageLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var activeRoom by remember { mutableStateOf<PonteRoom?>(null) }
+    var showLogin by remember { mutableStateOf(false) }
     val rooms = remember { mutableStateListOf<PonteRoom>() }
     val messages = remember { mutableStateListOf<PonteMessage>() }
     var subscription by remember { mutableStateOf<MessageSubscription?>(null) }
@@ -203,7 +205,7 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
                 }
             }
         )
-        else -> LoginScreen(
+        else -> if (showLogin) LoginScreen(
             error = error,
             onClearError = { error = null },
             onLogin = { server, user, password ->
@@ -219,8 +221,56 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
                     }
                 }
             },
-            onRegister = onOpenRegistration
+            onRegister = onOpenRegistration,
+            onBack = { showLogin = false }
+        ) else WelcomeScreen(
+            onManualLogin = { showLogin = true },
+            onCreateAccount = onOpenRegistration
         )
+    }
+}
+
+@Composable
+private fun WelcomeScreen(onManualLogin: () -> Unit, onCreateAccount: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF062A3D), Color(0xFF133E73), Color(0xFF050A12))))
+            .padding(horizontal = 28.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier.size(148.dp).background(Color(0x334F7C9B), RoundedCornerShape(34.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(Modifier.size(106.dp).background(Color(0xFF21C895), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.ChatBubbleOutline, null, tint = Color.White, modifier = Modifier.size(58.dp))
+            }
+        }
+        Spacer(Modifier.height(28.dp))
+        Text("Bem-vindo ao Ponte", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Mensagens entre pessoas, conectadas pela rede Matrix.",
+            color = Color(0xFFE2EAF3), style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center, lineHeight = MaterialTheme.typography.titleMedium.lineHeight
+        )
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onManualLogin,
+            modifier = Modifier.fillMaxWidth().height(58.dp),
+            shape = RoundedCornerShape(32.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF4F5F8), contentColor = Color(0xFF101820))
+        ) { Text("Entrar manualmente", fontWeight = FontWeight.SemiBold) }
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = onCreateAccount) {
+            Text("Criar conta Matrix", color = Color.White, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("Ponte • versão 0.2.1", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(10.dp))
     }
 }
 
@@ -229,7 +279,8 @@ private fun LoginScreen(
     error: String?,
     onClearError: () -> Unit,
     onLogin: (String, String, String) -> Unit,
-    onRegister: () -> Unit
+    onRegister: () -> Unit,
+    onBack: () -> Unit
 ) {
     var server by remember { mutableStateOf("matrix.org") }
     var user by remember { mutableStateOf("") }
@@ -239,6 +290,9 @@ private fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            TextButton(onClick = onBack) { Text("‹  Voltar", color = Blue) }
+        }
         Box(Modifier.size(80.dp).background(Blue, CircleShape), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.ChatBubbleOutline, null, tint = Color.White, modifier = Modifier.size(42.dp))
         }
