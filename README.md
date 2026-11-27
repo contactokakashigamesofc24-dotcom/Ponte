@@ -1,28 +1,20 @@
 # Ponte
 
-Projeto Android independente de mensageiro, iniciado em 27/11/2026. Element X é apenas referência funcional/visual; este projeto não reutiliza a identidade visual nem o código do Element ou do Lume.
+Mensageiro Android independente em desenvolvimento, usando a rede aberta Matrix e o SDK oficial Matrix Rust Kotlin. Não é Signal, Element, nem produto afiliado a esses projetos.
 
 ## Estado atual
 
-A primeira entrega é um protótipo nativo em Kotlin + Jetpack Compose com:
+Versão 0.2.0 em desenvolvimento:
+- login Matrix com servidor configurável (matrix.org por padrão);
+- armazenamento de sessão criptografado com chave mantida pelo Android Keystore;
+- banco local do SDK usando chave aleatória;
+- sincronização inicial e listagem de salas ingressadas;
+- visualização de mensagens de texto e envio em salas existentes.
 
-- tela inicial Ponte;
-- botão para abrir o cadastro oficial Matrix.org no navegador;
-- tela inicial de entrada com identificador Matrix e senha (somente visual nesta versão);
-- indicação explícita de que a conexão de mensagens ainda não está implementada.
+O projeto ainda é protótipo e precisa de testes reais de login, sincronização, cifragem ponta a ponta e envio/recebimento em duas contas antes de ser considerado funcional e pronto para uso cotidiano. Não use como cliente de emergência nem para informações sensíveis até a revisão e validação.
 
-**Não digite uma senha real na tela de demonstração.** A tela de entrada ainda não envia credenciais nem se conecta ao Matrix.
-
-## Próximas etapas
-
-1. Validar o build do APK de demonstração.
-2. Integrar autenticação Matrix com armazenamento seguro de token e tratamento correto de erros.
-3. Sincronizar e mostrar salas/conversas.
-4. Abrir uma conversa e enviar/receber texto.
-5. Testar no aparelho e corrigir antes de chamar o mensageiro de funcional.
-
-O primeiro servidor planejado para teste é `matrix.org`. Isso usa a rede Matrix, não a rede Signal. O uso de `matrix.org` pode estar sujeito a limites e regras do provedor; revisar os termos atuais antes de uso prolongado.
+Para criar uma conta, o botão abre o cadastro do Matrix.org no navegador. A senha é digitada no próprio aparelho e não deve ser enviada por chat. Token e chave local são protegidos com Android Keystore; o código-fonte é público.
 
 ## Compilação
 
-O workflow GitHub Actions compila um APK de depuração e guarda o artefato por 7 dias. Não há chaves, tokens nem senha de assinatura no repositório.
+GitHub Actions compila APK de depuração e publica-o como pré-lançamento. Veja Actions/Releases no repositório.

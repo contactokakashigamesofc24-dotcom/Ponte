@@ -1,0 +1,291 @@
+package com.luizfernando.ponte
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import org.matrix.rustcomponents.sdk.Client
+import org.matrix.rustcomponents.sdk.ClientBuilder
+import org.matrix.rustcomponents.sdk.Membership
+import org.matrix.rustcomponents.sdk.MessageType
+import org.matrix.rustcomponents.sdk.Room
+import org.matrix.rustcomponents.sdk.RoomMessageEventContentWithoutRelation
+import org.matrix.rustcomponents.sdk.Session
+import org.matrix.rustcomponents.sdk.SlidingSyncVersion
+import org.matrix.rustcomponents.sdk.SqliteStoreBuilder
+import org.matrix.rustcomponents.sdk.TextMessageContent
+import org.matrix.rustcomponents.sdk.Timeline
+import org.matrix.rustcomponents.sdk.TimelineDiff
+import org.matrix.rustcomponents.sdk.TimelineItem
+import org.matrix.rustcomponents.sdk.TimelineItemContent
+import org.matrix.rustcomponents.sdk.MsgLikeKind
+import org.matrix.rustcomponents.sdk.TimelineListener
+import java.security.KeyStore
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+internal data class PonteRoom(val id: String, val title: String)
+internal data class PonteMessage(val id: String, val sender: String, val body: String, val mine: Boolean)
+
+/** Holds the Matrix SDK session in an Android Keystore-encrypted preferences value. */
+private class SecureSessionVault(context: Context) {
+    private val prefs = context.getSharedPreferences("ponte_secure_session", Context.MODE_PRIVATE)
+    private val alias = "PonteMatrixSessionKeyV1"
+
+    fun read(): JSONObject? {
+        val packed = prefs.getString("encrypted", null) ?: return null
+        return try {
+            val bytes = Base64.decode(packed, Base64.NO_WRAP)
+            val iv = bytes.copyOfRange(0, 12)
+            val ciphertext = bytes.copyOfRange(12, bytes.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
+            JSONObject(String(cipher.doFinal(ciphertext), Charsets.UTF_8))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun write(json: JSONObject) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val encrypted = cipher.iv + cipher.doFinal(json.toString().toByteArray(Charsets.UTF_8))
+        check(prefs.edit().putString("encrypted", Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit())
+    }
+
+    fun clear() {
+        prefs.edit().clear().commit()
+    }
+
+    private fun key(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val existing = store.getKey(alias, null) as? SecretKey
+        if (existing != null) return existing
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+        )
+        return generator.generateKey()
+    }
+}
+
+internal class MatrixRepository(context: Context) {
+    private val app = context.applicationContext
+    private val vault = SecureSessionVault(app)
+    private var client: Client? = null
+    private val dataDirectory = app.filesDir.resolve("matrix-store").apply { mkdirs() }
+    private val cacheDirectory = app.cacheDir.resolve("matrix-cache").apply { mkdirs() }
+
+    suspend fun login(homeserver: String, user: String, password: String): String = withContext(Dispatchers.IO) {
+        closeClient()
+        val normalizedServer = normalizeHomeserver(homeserver)
+        val dbKey = ByteArray(32).also(SecureRandom()::nextBytes)
+        val built = newBuilder(normalizedServer, dbKey).build()
+        try {
+            built.login(user.trim(), password, "Ponte Android", null)
+            val session = built.session()
+            vault.write(sessionJson(session).put("db_key", Base64.encodeToString(dbKey, Base64.NO_WRAP)))
+            startSync(built)
+            client = built
+            session.userId
+        } catch (t: Throwable) {
+            built.destroy()
+            throw t
+        }
+    }
+
+    suspend fun restore(): String? = withContext(Dispatchers.IO) {
+        if (client != null) return@withContext client?.userId()
+        val saved = vault.read() ?: return@withContext null
+        val dbKeyText = saved.optString("db_key")
+        if (dbKeyText.isBlank()) return@withContext null
+        val dbKey = Base64.decode(dbKeyText, Base64.NO_WRAP)
+        val session = sessionFromJson(saved)
+        val active = newBuilder(session.homeserverUrl, dbKey).build()
+        try {
+            active.restoreSession(session)
+            startSync(active)
+            client = active
+            session.userId
+        } catch (t: Throwable) {
+            active.destroy()
+            throw t
+        }
+    }
+
+    suspend fun rooms(): List<PonteRoom> = withContext(Dispatchers.IO) {
+        val active = client ?: return@withContext emptyList()
+        active.rooms().mapNotNull { room ->
+            try {
+                if (room.membership() != Membership.JOIN || room.isSpace()) return@mapNotNull null
+                PonteRoom(room.id(), room.displayName()?.takeIf { it.isNotBlank() } ?: room.id())
+            } finally {
+                room.destroy()
+            }
+        }.sortedBy { it.title.lowercase() }
+    }
+
+    suspend fun loadMessages(roomId: String, onMessages: (List<PonteMessage>) -> Unit): MessageSubscription = withContext(Dispatchers.IO) {
+        val room = client?.getRoom(roomId) ?: error("A conversa não está disponível nesta sessão.")
+        val timeline = room.timeline()
+        val current = mutableListOf<PonteMessage>()
+        val listener = object : TimelineListener {
+            override fun onUpdate(diff: List<TimelineDiff>) {
+                synchronized(current) {
+                    for (change in diff) {
+                        when (change) {
+                            is TimelineDiff.Append -> change.values.forEach { addTimelineItem(current, it) }
+                            is TimelineDiff.PushBack -> addTimelineItem(current, change.value)
+                            is TimelineDiff.PushFront -> addTimelineItem(current, change.value)
+                            is TimelineDiff.Insert -> addTimelineItem(current, change.value)
+                            is TimelineDiff.Set -> setTimelineItem(current, change.index.toInt(), change.value)
+                            is TimelineDiff.Remove -> if (change.index.toInt() in current.indices) current.removeAt(change.index.toInt())
+                            is TimelineDiff.Clear -> current.clear()
+                            is TimelineDiff.PopBack -> if (current.isNotEmpty()) current.removeAt(current.lastIndex)
+                            is TimelineDiff.PopFront -> if (current.isNotEmpty()) current.removeAt(0)
+                            is TimelineDiff.Truncate -> while (current.size > change.length.toInt()) current.removeAt(current.lastIndex)
+                            is TimelineDiff.Reset -> { current.clear(); change.values.forEach { addTimelineItem(current, it) } }
+                        }
+                    }
+                    onMessages(current.toList())
+                }
+            }
+        }
+        val handle = timeline.addListener(listener)
+        MessageSubscription(room, timeline, handle)
+    }
+
+    suspend fun sendText(roomId: String, text: String) = withContext(Dispatchers.IO) {
+        val room = client?.getRoom(roomId) ?: error("A conversa não está disponível.")
+        try {
+            val timeline = room.timeline()
+            try {
+                val content: RoomMessageEventContentWithoutRelation = timeline.createMessageContent(
+                    MessageType.Text(TextMessageContent(text, null))
+                ) ?: error("Não foi possível preparar a mensagem.")
+                content.use {
+                    timeline.send(it)
+                }
+            } finally {
+                timeline.destroy()
+            }
+        } finally {
+            room.destroy()
+        }
+    }
+
+    suspend fun logout() = withContext(Dispatchers.IO) {
+        client?.let { active ->
+            try { active.logout() } catch (_: Exception) { }
+        }
+        closeClient()
+        vault.clear()
+        dataDirectory.deleteRecursively()
+        cacheDirectory.deleteRecursively()
+        dataDirectory.mkdirs()
+        cacheDirectory.mkdirs()
+    }
+
+    fun close() {
+        client?.destroy()
+        client = null
+    }
+
+    private fun closeClient() {
+        client?.destroy()
+        client = null
+    }
+
+    private fun newBuilder(homeserver: String, databaseKey: ByteArray?): ClientBuilder {
+        val builder = ClientBuilder()
+            .serverNameOrHomeserverUrl(homeserver)
+            .sessionPaths(dataDirectory.absolutePath, cacheDirectory.absolutePath)
+            .autoEnableBackups(true)
+            .autoEnableCrossSigning(true)
+            .enableAutomaticBackPagination(true)
+        val storeBuilder = SqliteStoreBuilder()
+        if (databaseKey != null) {
+            storeBuilder.key(databaseKey)
+        }
+        return builder.sqliteStore(storeBuilder)
+    }
+
+    private suspend fun startSync(active: Client) {
+        active.syncService().finish().start()
+    }
+
+    private fun normalizeHomeserver(input: String): String {
+        val value = input.trim().ifBlank { "matrix.org" }
+        return when {
+            value.startsWith("https://") -> value.trimEnd('/')
+            value.startsWith("http://") -> throw IllegalArgumentException("Por segurança, o servidor precisa usar HTTPS.")
+            else -> "https://${value.trimEnd('/')}"
+        }
+    }
+
+    private fun sessionJson(session: Session) = JSONObject()
+        .put("access_token", session.accessToken)
+        .put("refresh_token", session.refreshToken)
+        .put("user_id", session.userId)
+        .put("device_id", session.deviceId)
+        .put("homeserver_url", session.homeserverUrl)
+        .put("oauth_data", session.oauthData)
+        .put("sliding_sync_version", session.slidingSyncVersion.name)
+
+    private fun sessionFromJson(json: JSONObject) = Session(
+        accessToken = json.getString("access_token"),
+        refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() },
+        userId = json.getString("user_id"),
+        deviceId = json.getString("device_id"),
+        homeserverUrl = json.getString("homeserver_url"),
+        oauthData = json.optString("oauth_data").takeIf { it.isNotBlank() },
+        slidingSyncVersion = runCatching { SlidingSyncVersion.valueOf(json.optString("sliding_sync_version", "NONE")) }.getOrDefault(SlidingSyncVersion.NONE)
+    )
+
+    private fun addTimelineItem(target: MutableList<PonteMessage>, item: TimelineItem) {
+        try {
+            val event = item.asEvent() ?: return
+            try {
+                val content = event.content as? TimelineItemContent.MsgLike ?: return
+                val kind = content.content.kind as? MsgLikeKind.Message ?: return
+                val message = kind.content
+                target.removeAll { it.id == event.eventOrTransactionId.toString() }
+                target.add(PonteMessage(event.eventOrTransactionId.toString(), event.senderProfile.displayName ?: event.sender, message.body, event.isOwn))
+            } finally {
+                event.destroy()
+            }
+        } finally {
+            item.destroy()
+        }
+    }
+
+    private fun setTimelineItem(target: MutableList<PonteMessage>, index: Int, item: TimelineItem) {
+        val before = target.size
+        addTimelineItem(target, item)
+        if (before == target.size && index in target.indices) {
+            // Non-message items are intentionally omitted from this first text-only prototype.
+        }
+    }
+}
+
+internal class MessageSubscription(
+    private val room: Room,
+    private val timeline: Timeline,
+    private val handle: org.matrix.rustcomponents.sdk.TaskHandle
+) {
+    fun close() {
+        try { handle.destroy() } catch (_: Exception) { }
+        try { timeline.destroy() } catch (_: Exception) { }
+        try { room.destroy() } catch (_: Exception) { }
+    }
+}
