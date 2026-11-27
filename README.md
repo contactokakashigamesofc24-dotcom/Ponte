@@ -1,5 +1,5 @@
-# Ponte 0.2.5 — correção inicialização Android Matrix
+# Ponte 0.2.6 — componente TLS Android
 
-O app agora inicializa `org.matrix.rustsdk.Android.init(applicationContext)` antes de `initPlatform` e de qualquer chamada de rede. Esse é o caminho indicado pelo próprio Matrix Rust SDK para iniciar a verificação TLS Android; não se desativa a validação de certificados.
+Esta versão inclui a dependência Android JVM `org.rustls:rustls-platform-verifier:0.2.0`, publicada no Maven do projeto rustls, usada junto do rustls-platform-verifier 0.7.1 integrado ao SDK Matrix. O aplicativo inicializa o contexto Matrix Android antes da primeira chamada de rede. A validação de certificados TLS permanece ativa.
 
-O APK é assinado com a chave permanente configurada no GitHub Actions. O build e a checagem de assinatura não provam login real; instale por cima da 0.2.4 e teste no aparelho. Não digite senha se surgir um erro de inicialização. Não use para conversas sensíveis antes de validação.
+O APK usa a chave permanente do Ponte. A compilação e a verificação criptográfica da assinatura não comprovam uma conexão real; login, sincronização e mensagens ainda precisam ser testados no aparelho.

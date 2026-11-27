@@ -17,8 +17,8 @@ android {
         applicationId = "com.luizfernando.ponte"
         minSdk = 24
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.2.5"
+        versionCode = 8
+        versionName = "0.2.6"
     }
 
     signingConfigs {
@@ -70,6 +70,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.matrix.rustcomponents:sdk-android:26.11.17")
+    // Android JVM component required by rustls-platform-verifier 0.7.1 in the Matrix SDK.
+    implementation("org.rustls:rustls-platform-verifier:0.2.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
