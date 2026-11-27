@@ -100,6 +100,10 @@ internal class MatrixRepository(context: Context) {
             session.userId
         } catch (t: Throwable) {
             built.destroy()
+            dataDirectory.deleteRecursively()
+            cacheDirectory.deleteRecursively()
+            dataDirectory.mkdirs()
+            cacheDirectory.mkdirs()
             throw t
         }
     }
@@ -127,7 +131,7 @@ internal class MatrixRepository(context: Context) {
         val active = client ?: return@withContext emptyList()
         active.rooms().mapNotNull { room ->
             try {
-                if (room.membership() != Membership.JOIN || room.isSpace()) return@mapNotNull null
+                if (room.membership() != Membership.JOINED || room.isSpace()) return@mapNotNull null
                 PonteRoom(room.id(), room.displayName()?.takeIf { it.isNotBlank() } ?: room.id())
             } finally {
                 room.destroy()
@@ -213,7 +217,7 @@ internal class MatrixRepository(context: Context) {
             .autoEnableBackups(true)
             .autoEnableCrossSigning(true)
             .enableAutomaticBackPagination(true)
-        val storeBuilder = SqliteStoreBuilder()
+        val storeBuilder = SqliteStoreBuilder(dataDirectory.absolutePath, cacheDirectory.absolutePath)
         if (databaseKey != null) {
             storeBuilder.key(databaseKey)
         }
@@ -260,7 +264,7 @@ internal class MatrixRepository(context: Context) {
                 val kind = content.content.kind as? MsgLikeKind.Message ?: return
                 val message = kind.content
                 target.removeAll { it.id == event.eventOrTransactionId.toString() }
-                target.add(PonteMessage(event.eventOrTransactionId.toString(), event.senderProfile.displayName ?: event.sender, message.body, event.isOwn))
+                target.add(PonteMessage(event.eventOrTransactionId.toString(), ((event.senderProfile as? org.matrix.rustcomponents.sdk.ProfileDetails.Ready)?.displayName) ?: event.sender, message.body, event.isOwn))
             } finally {
                 event.destroy()
             }
