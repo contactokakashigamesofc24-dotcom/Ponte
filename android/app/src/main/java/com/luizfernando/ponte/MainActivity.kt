@@ -94,7 +94,9 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
     var pageLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var activeRoom by remember { mutableStateOf<PonteRoom?>(null) }
+    var showProvider by remember { mutableStateOf(false) }
     var showLogin by remember { mutableStateOf(false) }
+    var accountProvider by remember { mutableStateOf("matrix.org") }
     val rooms = remember { mutableStateListOf<PonteRoom>() }
     val messages = remember { mutableStateListOf<PonteMessage>() }
     var subscription by remember { mutableStateOf<MessageSubscription?>(null) }
@@ -206,6 +208,7 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
             }
         )
         else -> if (showLogin) LoginScreen(
+            server = accountProvider,
             error = error,
             onClearError = { error = null },
             onLogin = { server, user, password ->
@@ -222,9 +225,14 @@ private fun PonteApp(repository: MatrixRepository, onOpenRegistration: () -> Uni
                 }
             },
             onRegister = onOpenRegistration,
-            onBack = { showLogin = false }
+            onBack = { showLogin = false; showProvider = true }
+        ) else if (showProvider) ProviderScreen(
+            server = accountProvider,
+            onServerChange = { accountProvider = it },
+            onContinue = { showProvider = false; showLogin = true },
+            onBack = { showProvider = false }
         ) else WelcomeScreen(
-            onManualLogin = { showLogin = true },
+            onManualLogin = { showProvider = true },
             onCreateAccount = onOpenRegistration
         )
     }
@@ -275,14 +283,69 @@ private fun WelcomeScreen(onManualLogin: () -> Unit, onCreateAccount: () -> Unit
 }
 
 @Composable
+private fun ProviderScreen(
+    server: String,
+    onServerChange: (String) -> Unit,
+    onContinue: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF101316)).padding(horizontal = 24.dp, vertical = 20.dp),
+        horizontalAlignment = Alignment.Start
+    ) {
+        TextButton(onClick = onBack) { Text("‹  Voltar", color = Color(0xFFE5E9EF)) }
+        Spacer(Modifier.height(42.dp))
+        Box(Modifier.size(72.dp).background(Color(0xFF202428), RoundedCornerShape(18.dp)), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.ChatBubbleOutline, null, tint = Color.White, modifier = Modifier.size(36.dp))
+        }
+        Spacer(Modifier.height(24.dp))
+        Text("Servidor da sua conta", color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(48.dp))
+        Text("Servidor Matrix", color = Color(0xFFE3E6EA), style = MaterialTheme.typography.bodyLarge)
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            value = server,
+            onValueChange = onServerChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("matrix.org") },
+            singleLine = true,
+            shape = RoundedCornerShape(4.dp),
+            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedBorderColor = Color(0xFFB7C4D2),
+                unfocusedBorderColor = Color(0xFF555B61),
+                cursorColor = Color.White,
+                focusedPlaceholderColor = Color(0xFFAAAAAA),
+                unfocusedPlaceholderColor = Color(0xFFAAAAAA)
+            )
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Se sua conta é de uma empresa ou comunidade, informe o servidor indicado por ela.",
+            color = Color(0xFFB9C0C7), style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onContinue,
+            enabled = server.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(30.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE5EAF0), contentColor = Color(0xFF16191C))
+        ) { Text("Continuar", fontWeight = FontWeight.SemiBold) }
+        Spacer(Modifier.height(22.dp))
+    }
+}
+
+@Composable
 private fun LoginScreen(
+    server: String,
     error: String?,
     onClearError: () -> Unit,
     onLogin: (String, String, String) -> Unit,
     onRegister: () -> Unit,
     onBack: () -> Unit
 ) {
-    var server by remember { mutableStateOf("matrix.org") }
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     Column(
@@ -300,15 +363,8 @@ private fun LoginScreen(
         Text("Ponte", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = Ink)
         Text("Mensagens pela rede Matrix", color = Muted)
         Spacer(Modifier.height(24.dp))
-        OutlinedTextField(
-            value = server,
-            onValueChange = { server = it; onClearError() },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Servidor Matrix") },
-            placeholder = { Text("matrix.org") },
-            singleLine = true
-        )
-        Spacer(Modifier.height(10.dp))
+        Text("Servidor: $server", color = Muted, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(24.dp))
         OutlinedTextField(
             value = user,
             onValueChange = { user = it; onClearError() },
@@ -334,7 +390,7 @@ private fun LoginScreen(
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { onLogin(server, user, password) },
-            enabled = server.isNotBlank() && user.isNotBlank() && password.isNotBlank(),
+            enabled = user.isNotBlank() && password.isNotBlank(),
             modifier = Modifier.fillMaxWidth().height(54.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Blue)
