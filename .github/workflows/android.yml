@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 defaults:
   run:
@@ -43,3 +43,7 @@ jobs:
           name: Ponte-prototipo-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
+      - name: Publicar APK de demonstração
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ponte-prototipo-0.1.0-2026-11-27 app/build/outputs/apk/debug/app-debug.apk --repo "$GITHUB_REPOSITORY" --clobber
