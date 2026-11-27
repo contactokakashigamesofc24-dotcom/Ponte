@@ -132,6 +132,8 @@ private fun PonteApp(
     var activeRoom by remember { mutableStateOf<PonteRoom?>(null) }
     var showProvider by remember { mutableStateOf(false) }
     var showLogin by remember { mutableStateOf(false) }
+    var showSecureSetup by remember { mutableStateOf(false) }
+    var verificationPrompt by remember { mutableStateOf<VerificationPrompt?>(null) }
     var accountProvider by remember { mutableStateOf("matrix.org") }
     val rooms = remember { mutableStateListOf<PonteRoom>() }
     val messages = remember { mutableStateListOf<PonteMessage>() }
@@ -147,6 +149,7 @@ private fun PonteApp(
     LaunchedEffect(repository) {
         try {
             userId = repository.restore()
+            if (userId != null) showSecureSetup = repository.needsSecureMessagingSetup()
         } catch (t: Throwable) {
             error = userFacingError(t)
         } finally {
@@ -160,6 +163,7 @@ private fun PonteApp(
         error = null
         try {
             userId = repository.finishSsoLogin(callback)
+            showSecureSetup = repository.needsSecureMessagingSetup()
             showLogin = false
             showProvider = false
         } catch (t: Throwable) {
@@ -224,6 +228,54 @@ private fun PonteApp(
             },
             error = error
         )
+        userId != null && showSecureSetup -> SecureMessagingSetupScreen(
+            userId = userId!!,
+            prompt = verificationPrompt,
+            onRequestDevice = {
+                scope.launch {
+                    verificationPrompt = VerificationPrompt("Enviando pedido ao outro dispositivo…")
+                    try {
+                        repository.requestDeviceVerification { update ->
+                            MainHandler.post {
+                            verificationPrompt = update
+                            if (update.finished) showSecureSetup = false
+                        }
+                        }
+                    } catch (t: Throwable) {
+                        verificationPrompt = VerificationPrompt(userFacingError(t))
+                    }
+                }
+            },
+            onApprove = {
+                scope.launch {
+                    try {
+                        repository.approveDeviceVerification()
+                        verificationPrompt = VerificationPrompt("Confirmação enviada. Aguardando resposta do outro dispositivo…")
+                    } catch (t: Throwable) { verificationPrompt = VerificationPrompt(userFacingError(t)) }
+                }
+            },
+            onDecline = {
+                scope.launch {
+                    try { repository.declineDeviceVerification() }
+                    catch (t: Throwable) { verificationPrompt = VerificationPrompt(userFacingError(t)) }
+                    verificationPrompt = VerificationPrompt("Os códigos foram recusados. O dispositivo continua sem confirmação.")
+                }
+            },
+            onRecover = { key ->
+                scope.launch {
+                    verificationPrompt = VerificationPrompt("Conferindo a chave de recuperação…")
+                    try {
+                        val verified = repository.recoverSecureMessaging(key)
+                        verificationPrompt = VerificationPrompt(if (verified) "Identidade e mensagens seguras restauradas neste dispositivo." else "A recuperação terminou, mas o Matrix ainda informa que este dispositivo não está confirmado.", finished = verified)
+                        if (verified) showSecureSetup = false
+                    } catch (t: Throwable) { verificationPrompt = VerificationPrompt(userFacingError(t)) }
+                }
+            },
+            onLater = {
+                scope.launch { runCatching { repository.cancelDeviceVerification() } }
+                showSecureSetup = false
+            }
+        )
         userId != null -> RoomsScreen(
             userId = userId!!,
             rooms = rooms,
@@ -255,7 +307,7 @@ private fun PonteApp(
                         repository.logout()
                         userId = null
                         activeRoom = null
-                        rooms.clear(); messages.clear(); error = null
+                        rooms.clear(); messages.clear(); error = null; showSecureSetup = false; verificationPrompt = null
                     } catch (t: Throwable) { error = userFacingError(t) }
                     finally { pageLoading = false }
                 }
@@ -271,6 +323,7 @@ private fun PonteApp(
                     error = null
                     try {
                         userId = repository.login(server, user, password)
+                        showSecureSetup = repository.needsSecureMessagingSetup()
                     } catch (t: Throwable) {
                         error = userFacingError(t)
                     } finally {
@@ -402,6 +455,97 @@ private fun ProviderScreen(
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE5EAF0), contentColor = Color(0xFF16191C))
         ) { Text("Continuar", fontWeight = FontWeight.SemiBold) }
         Spacer(Modifier.height(22.dp))
+    }
+}
+
+@Composable
+private fun SecureMessagingSetupScreen(
+    userId: String,
+    prompt: VerificationPrompt?,
+    onRequestDevice: () -> Unit,
+    onApprove: () -> Unit,
+    onDecline: () -> Unit,
+    onRecover: (String) -> Unit,
+    onLater: () -> Unit
+) {
+    var showRecovery by remember { mutableStateOf(false) }
+    var recoveryKey by remember { mutableStateOf("") }
+    var showCannotConfirm by remember { mutableStateOf(false) }
+    val compareReady = prompt?.words?.isNotEmpty() == true || prompt?.numbers?.isNotEmpty() == true
+
+    if (showCannotConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCannotConfirm = false },
+            title = { Text("Não foi possível confirmar?") },
+            text = { Text("Sem confirmar este dispositivo, algumas mensagens criptografadas antigas talvez não possam ser abertas. Redefinir a identidade pode afetar o acesso ao histórico; o Ponte não fará esse reset automaticamente. Você pode voltar, tentar outro dispositivo, usar sua chave de recuperação ou continuar sem confirmar por enquanto.") },
+            confirmButton = { TextButton(onClick = { showCannotConfirm = false; onLater() }) { Text("Continuar sem confirmar") } },
+            dismissButton = { TextButton(onClick = { showCannotConfirm = false }) { Text("Voltar") } }
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(Modifier.size(76.dp).background(Blue, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Lock, contentDescription = null, tint = Color.White, modifier = Modifier.size(36.dp))
+        }
+        Spacer(Modifier.height(18.dp))
+        Text("Continue sua identidade", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(8.dp))
+        Text("Verifique este dispositivo para configurar suas mensagens seguras.", color = Muted, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
+        Text(userId, color = Muted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(20.dp))
+
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    prompt?.status ?: "Escolha como confirmar que este dispositivo pertence à sua conta.",
+                    color = if (prompt == null) Muted else Ink,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (prompt?.words?.isNotEmpty() == true) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(prompt.words.joinToString("   •   "), color = Ink, textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Compare os símbolos nos dois dispositivos. Confirme só se todos forem iguais.", color = Muted, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
+                }
+                if (prompt?.numbers?.isNotEmpty() == true) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(prompt.numbers.joinToString("   •   "), color = Ink, textAlign = TextAlign.Center, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Compare os números nos dois dispositivos. Confirme só se todos forem iguais.", color = Muted, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        if (compareReady) {
+            Button(onClick = onApprove, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("Os códigos coincidem") }
+            TextButton(onClick = onDecline, modifier = Modifier.fillMaxWidth()) { Text("Não coincidem — cancelar", color = Color(0xFFB3261E)) }
+        } else {
+            Button(onClick = onRequestDevice, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("Usar outro dispositivo") }
+            TextButton(onClick = { showRecovery = !showRecovery }, modifier = Modifier.fillMaxWidth()) { Text("Usar chave de recuperação", color = Blue) }
+            TextButton(onClick = { showCannotConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("Não consigo confirmar", color = Blue) }
+        }
+        if (showRecovery) {
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = recoveryKey,
+                onValueChange = { recoveryKey = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Chave de recuperação Matrix") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation()
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = { val key = recoveryKey; recoveryKey = ""; onRecover(key) }, enabled = recoveryKey.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = Blue)) { Text("Restaurar chaves") }
+            Text("A chave é usada para recuperar a criptografia; o Ponte não a exibe depois do envio.", color = Muted, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+        }
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("Agora não", color = Muted) }
     }
 }
 
