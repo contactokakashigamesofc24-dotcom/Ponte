@@ -2,11 +2,17 @@
 
 Mensageiro Android independente em desenvolvimento, usando a rede aberta Matrix e o SDK oficial Matrix Rust Kotlin. Não é Signal, Element, nem produto afiliado a esses projetos.
 
-## Versão 0.2.3 — protótipo em teste
+## Assinatura permanente do Android
 
-- Tela própria de boas-vindas e fluxo em etapas: escolher servidor Matrix, depois informar usuário e senha.
-- Cadastro Matrix aberto em aba do navegador para evitar que o Android encaminhe o link ao app Element.
-- Login Matrix (matrix.org por padrão), sessão protegida pelo Android Keystore e armazenamento local protegido por chave aleatória.
-- Sincronização, lista de salas, sala privada “Anotações”, convite a uma pessoa pelo ID Matrix e mensagens de texto.
+Os APKs do workflow são assinados com uma chave permanente guardada como segredos criptografados do GitHub Actions no repositório. O código seleciona essa chave para os builds debug e release; o fluxo de publicação verifica a assinatura antes de enviar o APK. **Não apagar, substituir ou girar esses segredos:** uma mudança de chave impede o Android de aceitar atualizações sobre os APKs anteriores assinados por ela. Se os segredos forem perdidos, a chave antiga não poderá ser recuperada do GitHub.
 
-**Ainda é um protótipo.** Build concluído; login real, sincronização, criptografia ponta a ponta e mensagens ainda precisam de teste no aparelho. Não use para conversas sensíveis nem como mensageiro de emergência.
+O APK 0.2.4 é o primeiro com a chave permanente. O Android pode impedir que ele seja instalado por cima de uma versão anterior assinada com outra chave. Desinstalar a versão anterior apaga o armazenamento local e a sessão Matrix; confirme antes de remover qualquer versão que contenha dados que queira manter.
+
+## Funcionalidades em teste
+
+- Tela de boas-vindas e escolha do servidor Matrix antes de entrar.
+- Cadastro Matrix aberto em navegador.
+- Sessão e dados locais protegidos no aparelho.
+- Lista de salas, criação de sala privada “Anotações”, convite a outro ID Matrix e mensagens de texto.
+
+O app continua protótipo. Build e assinatura não comprovam funcionamento no telefone; login, sincronização, cifragem ponta a ponta e envio/recebimento precisam de teste real. Não use para conversas sensíveis ou como mensageiro de emergência.

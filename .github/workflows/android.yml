@@ -35,21 +35,37 @@ jobs:
           echo "/usr/local/lib/android/sdk/platform-tools" >> "$GITHUB_PATH"
           yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
           /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-      - name: Compilar APK de teste
-        run: gradle --no-daemon assembleDebug
+      - name: Preparar chave permanente
+        env:
+          PONTE_SIGNING_KEYSTORE_B64: ${{ secrets.PONTE_SIGNING_KEYSTORE_B64 }}
+        run: |
+          test -n "$PONTE_SIGNING_KEYSTORE_B64"
+          printf '%s' "$PONTE_SIGNING_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/ponte-release.p12"
+          chmod 600 "$RUNNER_TEMP/ponte-release.p12"
+          echo "PONTE_SIGNING_KEYSTORE=$RUNNER_TEMP/ponte-release.p12" >> "$GITHUB_ENV"
+      - name: Compilar APK assinado
+        env:
+          PONTE_SIGNING_PASSWORD: ${{ secrets.PONTE_SIGNING_PASSWORD }}
+          PONTE_SIGNING_ALIAS: ${{ secrets.PONTE_SIGNING_ALIAS }}
+        run: |
+          test -n "$PONTE_SIGNING_PASSWORD"
+          test -n "$PONTE_SIGNING_ALIAS"
+          gradle --no-daemon assembleDebug
+      - name: Verificar assinatura do APK
+        run: /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ponte-0.2.3-matrix-debug
+          name: Ponte-0.2.4-assinado
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
-      - name: Publicar APK de teste
+      - name: Publicar APK assinado
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create ponte-0.2.3-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
+          gh release create ponte-0.2.4-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
           --repo "$GITHUB_REPOSITORY"
           --target "$GITHUB_SHA"
-          --title "Ponte 0.2.3 — cadastro no navegador"
-          --notes 'Cadastro Matrix aberto em aba do navegador para evitar que o Android encaminhe o link ao Element. Protótipo em teste; confira o README e valide no aparelho.'
+          --title "Ponte 0.2.4 — assinatura permanente"
+          --notes 'O APK de depuração deste build e das próximas atualizações usa a mesma chave permanente armazenada como segredo do GitHub Actions. Primeira migração de assinatura; versões anteriores podem exigir remoção antes de instalar. Remover o app apaga dados locais. Protótipo Matrix, valide no aparelho.'
           --prerelease

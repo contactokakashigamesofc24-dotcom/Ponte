@@ -287,7 +287,7 @@ private fun WelcomeScreen(onManualLogin: () -> Unit, onCreateAccount: () -> Unit
             Text("Criar conta Matrix", color = Color.White, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(20.dp))
-        Text("Ponte • versão 0.2.3", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
+        Text("Ponte • versão 0.2.4", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(10.dp))
     }
 }

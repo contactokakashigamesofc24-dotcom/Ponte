@@ -4,6 +4,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val ponteKeystorePath = System.getenv("PONTE_SIGNING_KEYSTORE")
+val ponteKeystorePassword = System.getenv("PONTE_SIGNING_PASSWORD")
+val ponteKeyAlias = System.getenv("PONTE_SIGNING_ALIAS")
+val ponteHasPermanentSigning = !ponteKeystorePath.isNullOrBlank() && !ponteKeystorePassword.isNullOrBlank() && !ponteKeyAlias.isNullOrBlank()
+
 android {
     namespace = "com.luizfernando.ponte"
     compileSdk = 35
@@ -12,8 +17,32 @@ android {
         applicationId = "com.luizfernando.ponte"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.2.3"
+        versionCode = 6
+        versionName = "0.2.4"
+    }
+
+    signingConfigs {
+        if (ponteHasPermanentSigning) {
+            create("pontePermanent") {
+                storeFile = file(ponteKeystorePath!!)
+                storePassword = ponteKeystorePassword
+                keyAlias = ponteKeyAlias
+                keyPassword = ponteKeystorePassword
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            if (ponteHasPermanentSigning) {
+                signingConfig = signingConfigs.getByName("pontePermanent")
+            }
+        }
+        getByName("release") {
+            if (ponteHasPermanentSigning) {
+                signingConfig = signingConfigs.getByName("pontePermanent")
+            }
+        }
     }
 
     buildFeatures {
