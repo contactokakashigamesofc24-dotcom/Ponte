@@ -1,5 +1,5 @@
-# Ponte 0.2.8 — entrada Matrix via SSO
+# Ponte 0.2.9 — configuração do Sliding Sync
 
-Adiciona uma opção inicial “Entrar pelo navegador (SSO)”. O SDK inicia o SSO Matrix no homeserver escolhido, abre a página de autenticação no navegador do sistema/Custom Tab e recebe o retorno no deep link `ponte://login`. Após concluir, o SDK persiste a sessão pelo cofre Android já utilizado no login por senha. O app não lê nem transmite a senha do provedor SSO.
+Configura `SlidingSyncVersionBuilder.DISCOVER_NATIVE` no cliente Matrix, para descobrir a versão nativa do Sliding Sync do homeserver antes de criar a sessão. Mantém o componente TLS Android e o login SSO pelo navegador introduzidos anteriormente.
 
-O fluxo depende do homeserver e do provedor configurarem o callback de maneira compatível. A compilação/assinatura não confirmam ainda a autenticação real; teste no aparelho antes de usar a conta. A opção de login por senha permanece disponível.
+Build de release assinado com chave permanente. Ainda requer validação operacional no aparelho.

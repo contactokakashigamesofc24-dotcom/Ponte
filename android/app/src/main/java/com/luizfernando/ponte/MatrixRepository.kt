@@ -19,6 +19,7 @@ import org.matrix.rustcomponents.sdk.RoomMessageEventContentWithoutRelation
 import org.matrix.rustcomponents.sdk.Session
 import org.matrix.rustcomponents.sdk.SsoHandler
 import org.matrix.rustcomponents.sdk.SlidingSyncVersion
+import org.matrix.rustcomponents.sdk.SlidingSyncVersionBuilder
 import org.matrix.rustcomponents.sdk.SqliteStoreBuilder
 import org.matrix.rustcomponents.sdk.TextMessageContent
 import org.matrix.rustcomponents.sdk.Timeline
@@ -309,6 +310,7 @@ internal class MatrixRepository(context: Context) {
     private fun newBuilder(homeserver: String, databaseKey: ByteArray?): ClientBuilder {
         val builder = ClientBuilder()
             .serverNameOrHomeserverUrl(homeserver)
+            .slidingSyncVersionBuilder(SlidingSyncVersionBuilder.DISCOVER_NATIVE)
             .sessionPaths(dataDirectory.absolutePath, cacheDirectory.absolutePath)
             .autoEnableBackups(true)
             .autoEnableCrossSigning(true)

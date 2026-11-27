@@ -56,16 +56,16 @@ jobs:
       - name: Guardar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Ponte-0.2.8-assinado
+          name: Ponte-0.2.9-assinado
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
       - name: Publicar APK assinado
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create ponte-0.2.8-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
+          gh release create ponte-0.2.9-2026-11-27 app/build/outputs/apk/debug/app-debug.apk
           --repo "$GITHUB_REPOSITORY"
           --target "$GITHUB_SHA"
-          --title "Ponte 0.2.8 — login SSO pelo navegador"
-          --notes 'Adiciona fluxo inicial de login SSO Matrix pelo navegador e retorno seguro ao Ponte, mantendo login por senha e validação TLS. Assinado com a chave permanente. Login SSO e sincronização ainda precisam de teste real no aparelho.'
+          --title "Ponte 0.2.9 — configuração Sliding Sync"
+          --notes 'Corrige inicialização obrigatória de Sliding Sync para descobrir a versão nativa suportada pelo servidor Matrix. Mantém login SSO pelo navegador, login por senha, validação TLS e chave permanente. Login e sincronização ainda precisam ser testados no aparelho.'
           --prerelease
