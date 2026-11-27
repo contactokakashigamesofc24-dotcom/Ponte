@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,7 +79,16 @@ class MainActivity : ComponentActivity() {
                     PonteApp(
                         repository = remember { MatrixRepository(applicationContext) },
                         onOpenRegistration = {
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://account.matrix.org/register?kind=manage_account")))
+                            val registration = Uri.parse("https://account.matrix.org/register?kind=manage_account")
+                            try {
+                                CustomTabsIntent.Builder().build().launchUrl(this, registration)
+                            } catch (_: Exception) {
+                                try {
+                                    startActivity(Intent(Intent.ACTION_VIEW, registration).setPackage("com.android.chrome"))
+                                } catch (_: Exception) {
+                                    startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, registration), "Abrir cadastro no navegador"))
+                                }
+                            }
                         }
                     )
                 }
@@ -277,7 +287,7 @@ private fun WelcomeScreen(onManualLogin: () -> Unit, onCreateAccount: () -> Unit
             Text("Criar conta Matrix", color = Color.White, fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(20.dp))
-        Text("Ponte • versão 0.2.1", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
+        Text("Ponte • versão 0.2.3", color = Color(0x99FFFFFF), style = MaterialTheme.typography.bodySmall)
         Spacer(Modifier.height(10.dp))
     }
 }
