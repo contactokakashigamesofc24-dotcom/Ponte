@@ -28,10 +28,10 @@ jobs:
           java-version: '21'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Install Android SDK 36
+      - name: Install Android SDK 37
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-37" "build-tools;37.0.0" "platform-tools"
       - name: Prepare Ponte permanent signing key
         env:
           PONTE_SIGNING_KEYSTORE_B64: ${{ secrets.PONTE_SIGNING_KEYSTORE_B64 }}
@@ -53,8 +53,8 @@ jobs:
         run: |
           APK=$(find ElementX/app/build/outputs/apk/fdroid/release -type f -name '*universal-release.apk' | head -n 1)
           test -n "$APK"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.luizfernando.ponte'"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.luizfernando.ponte'"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK"
           mkdir -p dist
           cp "$APK" dist/Ponte-full-client.apk
       - name: Record source commit
